@@ -25,9 +25,27 @@ CREATE TABLE IF NOT EXISTS readings (
     PRIMARY KEY (meter_id, ts_utc)
 );
 
+-- 封存差值：每只表每个完整小时一条（小时起点 -> 下一整点的累计读数之差）。
+-- 封存后原始整点被删除，旧日净电量改由本表与查询时的当前层级重算。
+CREATE TABLE IF NOT EXISTS reading_deltas (
+    meter_id    TEXT NOT NULL,
+    hour_start  TEXT NOT NULL,       -- 规范化为 'YYYY-MM-DDTHH:00:00Z'
+    delta_kwh   REAL NOT NULL,       -- 可为负：倒退小时按差值原样留存，查询时待核
+    archived_at TEXT NOT NULL,
+    PRIMARY KEY (meter_id, hour_start)
+);
+
+-- 封存边界（单行表，id 固定为 1）：边界为某个 UTC 零点；
+-- 早于边界的原始读数已删除，边界点保留用于后续小时衔接；边界只能前进。
+CREATE TABLE IF NOT EXISTS archive_state (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    boundary_utc TEXT NOT NULL,      -- 'YYYY-MM-DDT00:00:00Z'
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS batches (
     batch_id   TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL,        -- 'hierarchy' | 'readings'
+    kind       TEXT NOT NULL,        -- 'hierarchy' | 'readings' | 'archive'
     status     TEXT NOT NULL,        -- 'applied' | 'rejected'
     reason     TEXT,
     row_count  INTEGER NOT NULL,

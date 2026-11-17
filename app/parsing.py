@@ -40,27 +40,36 @@ def _header_index(header: list[str], aliases: set[str], kind: str) -> int:
     )
 
 
-def parse_utc_hour(raw: str, lineno: int) -> str:
+def parse_utc_hour(raw: str, lineno: int | None = None) -> str:
     """把输入时间戳规范化为 'YYYY-MM-DDTHH:00:00Z'。
 
     只接受显式 UTC（Z 或 +00:00）且分/秒必须为 0，否则整批拒收，
-    避免时区歧义。
+    避免时区歧义。lineno 为 None 时用于 API 参数（非 CSV 行）。
     """
+    where = f"第 {lineno} 行: " if lineno is not None else ""
     s = raw.strip()
     if not s:
-        raise CsvError(f"第 {lineno} 行: 时间为空")
+        raise CsvError(f"{where}时间为空")
     normalized = s[:-1] + "+00:00" if s.endswith(("Z", "z")) else s
     try:
         dt = datetime.fromisoformat(normalized)
     except ValueError:
-        raise CsvError(f"第 {lineno} 行: 时间格式无法解析: {raw!r}")
+        raise CsvError(f"{where}时间格式无法解析: {raw!r}")
     if dt.tzinfo is None:
-        raise CsvError(f"第 {lineno} 行: 时间必须带 UTC 时区标记（Z 或 +00:00）: {raw!r}")
+        raise CsvError(f"{where}时间必须带 UTC 时区标记（Z 或 +00:00）: {raw!r}")
     if dt.utcoffset() != timezone.utc.utcoffset(None):
-        raise CsvError(f"第 {lineno} 行: 只接受 UTC 时间，收到: {raw!r}")
+        raise CsvError(f"{where}只接受 UTC 时间，收到: {raw!r}")
     if dt.minute or dt.second or dt.microsecond:
-        raise CsvError(f"第 {lineno} 行: 必须是 UTC 整点（分秒为 0）: {raw!r}")
+        raise CsvError(f"{where}必须是 UTC 整点（分秒为 0）: {raw!r}")
     return dt.strftime(TS_FORMAT)
+
+
+def parse_utc_midnight(raw: str) -> str:
+    """封存边界参数：必须是 UTC 零点（按 UTC 日推进），规范化为 TS_FORMAT。"""
+    ts = parse_utc_hour(raw)
+    if not ts.endswith("T00:00:00Z"):
+        raise CsvError(f"封存边界必须是 UTC 零点（00:00），收到: {raw!r}")
+    return ts
 
 
 def parse_hierarchy_csv(text: str) -> list[tuple[str, str]]:
